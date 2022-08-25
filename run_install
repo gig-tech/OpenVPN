@@ -1,0 +1,22 @@
+#!/bin/bash
+# Download install and config scripts
+
+## Server install
+cd /root/
+curl https://raw.githubusercontent.com/wandalabs/openvpn/main/cmds_server -O
+chmod +x cmds_server
+./cmds_server
+
+## Client ovpn file generation
+cd /home/user/client-configs
+curl https://raw.githubusercontent.com/wandalabs/openvpn/main/cmds_client -O
+chmod +x cmds_client
+
+
+
+
+
+
+
+
+

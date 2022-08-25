@@ -1,0 +1,46 @@
+#!/bin/bash
+
+# Generating a Client Certificate and Key Pair
+
+mkdir -p /home/user/client-configs/keys
+chmod -R 700 /home/user/client-configs
+cd /root/easy-rsa
+./easyrsa gen-req client1 nopass
+cp pki/private/client1.key /home/user/client-configs/keys/
+cd /root/easy-rsa
+./easyrsa sign-req client client1
+cp /root/easy-rsa/pki/issued/client1.crt /home/user/client-configs/keys/
+cp /root/easy-rsa/ta.key /home/user/client-configs/keys/
+cp /etc/openvpn/server/ca.crt /home/user/client-configs/keys/
+chown user.user /home/user/client-configs/keys/*
+
+
+
+cat << 'EOF' >> /home/user/client-configs/make_config.sh
+#!/bin/bash
+ 
+# First argument: Client identifier
+ 
+KEY_DIR=/home/user/client-configs/keys
+OUTPUT_DIR=/home/user/client-configs/files
+BASE_CONFIG=/home/user/client-configs/base.conf
+ 
+cat ${BASE_CONFIG} \
+    <(echo -e '<ca>') \
+    ${KEY_DIR}/ca.crt \
+    <(echo -e '</ca>\n<cert>') \
+    ${KEY_DIR}/${1}.crt \
+    <(echo -e '</cert>\n<key>') \
+    ${KEY_DIR}/${1}.key \
+    <(echo -e '</key>\n<tls-crypt>') \
+    ${KEY_DIR}/ta.key \
+    <(echo -e '</tls-crypt>') \
+    > ${OUTPUT_DIR}/${1}.ovpn
+EOF
+chmod 700 /home/user/client-configs/make_config.sh
+
+# Generating Client Configurations
+
+cd /home/user/client-configs
+./make_config.sh client1
+cp /home/user/client-configs/files/client1.ovpn /home/user/

@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# OpenVPN and Easy-RSA Install
+
+apt update
+apt install -y openvpn easy-rsa net-tools
+mkdir /root/easy-rsa
+ln -s /usr/share/easy-rsa/* /root/easy-rsa/
+chmod 700 /root/easy-rsa
+
+# Creating a PKI for OpenVPN
+
+cd /root/easy-rsa
+cat << 'EOF' >> vars
+set_var EASYRSA_REQ_COUNTRY "UG"
+set_var EASYRSA_REQ_PROVINCE "Central"
+set_var EASYRSA_REQ_CITY "Kampala"
+set_var EASYRSA_REQ_ORG "Example"
+set_var EASYRSA_REQ_EMAIL "admin@example.com"
+set_var EASYRSA_REQ_OU "Community"
+set_var EASYRSA_ALGO "ec"
+set_var EASYRSA_DIGEST "sha512"
+set_var EASYRSA_BATCH "1"
+EOF
+./easyrsa init-pki
+./easyrsa build-ca nopass
+
+# Creating an OpenVPN Server Certificate Request and Private Key
+
+cd /root/easy-rsa
+./easyrsa gen-req server nopass
+cp /root/easy-rsa/pki/private/server.key /etc/openvpn/server/
+
+# Signing the OpenVPN Server’s Certificate Request
+
+cd /root/easy-rsa
+./easyrsa sign-req server server
+cp /root/easy-rsa/pki/issued/server.crt /etc/openvpn/server/
+cp /root/easy-rsa/pki/ca.crt /etc/openvpn/server/
+
+# Configuring OpenVPN Cryptographic Material
+
+cd /root/easy-rsa
+openvpn --genkey --secret ta.key
+cp ta.key /etc/openvpn/server
+
+# Configuring OpenVPN
+cp /usr/share/doc/openvpn/examples/sample-config-files/server.conf.gz /etc/openvpn/server/
+gunzip /etc/openvpn/server/server.conf.gz
+sed -i '/tls-auth ta.key 0/ a tls-crypt ta.key' /etc/openvpn/server/server.conf
+sed -i 's/tls-auth ta.key 0/#tls-auth ta.key 0/g' /etc/openvpn/server/server.conf
+sed -i '/cipher AES-256-CBC/ a cipher AES-256-GCM' /etc/openvpn/server/server.conf
+sed -i 's/cipher AES-256-CBC/#cipher AES-256-CBC/g' /etc/openvpn/server/server.conf
+sed -i '/cipher AES-256-GCM/ a auth SHA256' /etc/openvpn/server/server.conf
+sed -i '/dh dh2048.pem/ a dh none' /etc/openvpn/server/server.conf
+sed -i 's/dh dh2048.pem/#dh dh2048.pem/g' /etc/openvpn/server/server.conf
+sed -i 's/;user nobody/user nobody/g' /etc/openvpn/server/server.conf
+sed -i 's/;group nogroup/group nogroup/g' /etc/openvpn/server/server.conf
+# Subnets to be Accessed behind VPN
+NET_ADDR=$(route | grep ens3 | grep -wv _gateway | awk '{print $1}')
+export NET_ADDR
+NET_MASK=$(route | grep ens3 | grep -wv _gateway | awk '{print $3}')
+export NET_MASK
+export PUSH_STRING="push \"route ${NET_ADDR} ${NET_MASK}\""
+sed -i "/;push \"route 192.168.20.0 255.255.255.0\"/ a ${PUSH_STRING}" /etc/openvpn/server/server.conf
+
+
+# Adjusting the OpenVPN Server Networking Configuration
+sh -c "echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.conf"
+sysctl -p
+
+# Firewall Configuration
+NET_IF=$(ip route list default | awk -F'dev ' '{ print $2 }' | awk -F' ' '{ print $1 }')
+export NET_IF
+sed -i '9 a \\n' /etc/ufw/before.rules
+sed -i '11 a # START OPENVPN RULES' /etc/ufw/before.rules
+sed -i '12 a # NAT table rules' /etc/ufw/before.rules
+sed -i '13 a *nat' /etc/ufw/before.rules
+sed -i '14 a :POSTROUTING ACCEPT [0:0]' /etc/ufw/before.rules
+sed -i '15 a # Allow traffic from OpenVPN client to  (change to the interface you discovered!)' /etc/ufw/before.rules
+sed -i "16 a -A POSTROUTING -s 10.8.0.0/8 -o $NET_IF -j MASQUERADE" /etc/ufw/before.rules
+sed -i '17 a COMMIT' /etc/ufw/before.rules
+sed -i '18 a # END OPENVPN RULES' /etc/ufw/before.rules
+sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/g' /etc/default/ufw
+ufw allow 1194/udp
+ufw allow OpenSSH
+ufw disable
+ufw --force enable
+
+# Starting OpenVPN
+systemctl -f enable openvpn-server@server.service
+sleep 2
+systemctl start openvpn-server@server.service
+
+
+# Creating the Client Configuration Infrastructure
+IPADDR=$(ip -o -4 addr list ens3 | awk -F'inet ' '{print $2}' | awk -F/ '{print $1}')
+export IPADDR
+PUB_IPA=$(curl ifconfig.io)
+export PUB_IPA
+mkdir -p /home/user/client-configs/files
+cp /usr/share/doc/openvpn/examples/sample-config-files/client.conf /home/user/client-configs/base.conf
+sed -i "s/remote my-server-1 1194/remote $PUB_IPA 1194/g" /home/user/client-configs/base.conf
+sed -i 's/;user nobody/user nobody/g' /home/user/client-configs/base.conf
+sed -i 's/;group nogroup/group nogroup/g' /home/user/client-configs/base.conf
+sed -i 's/ca ca.crt/;ca ca.crt/g' /home/user/client-configs/base.conf
+sed -i 's/cert client.crt/;cert client.crt/g' /home/user/client-configs/base.conf
+sed -i 's/key client.key/;key client.key/g' /home/user/client-configs/base.conf
+sed -i 's/tls-auth ta.key 1/#tls-auth ta.key 1/g' /home/user/client-configs/base.conf
+sed -i '/cipher AES-256-CBC/ a cipher AES-256-GCM' /home/user/client-configs/base.conf
+sed -i 's/cipher AES-256-CBC/#cipher AES-256-CBC/g' /home/user/client-configs/base.conf
+sed -i '/cipher AES-256-GCM/ a auth SHA256' /home/user/client-configs/base.conf
+sed -i 's/^;/#/g' /home/user/client-configs/base.conf
+echo 'key-direction 1' >> /home/user/client-configs/base.conf
+echo '#For resolvconf' >> /home/user/client-configs/base.conf
+echo '#script-security 2' >> /home/user/client-configs/base.conf
+echo '#up /etc/openvpn/update-resolv-conf'  >> /home/user/client-configs/base.conf
+echo '#down /etc/openvpn/update-resolv-conf'  >> /home/user/client-configs/base.conf
+echo '#For systemd-resolved' >> /home/user/client-configs/base.conf
+echo '#script-security 2' >> /home/user/client-configs/base.conf
+echo '#up /etc/openvpn/update-systemd-resolved' >> /home/user/client-configs/base.conf
+echo '#down /etc/openvpn/update-systemd-resolved' >> /home/user/client-configs/base.conf
+echo '#down-pre' >> /home/user/client-configs/base.conf
+echo '#dhcp-option DOMAIN-ROUTE .' >> /home/user/client-configs/base.conf
+
+echo "user ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/user && sudo chmod 0440 /etc/sudoers.d/user
+
+
