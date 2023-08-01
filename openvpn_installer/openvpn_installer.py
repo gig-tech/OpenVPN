@@ -1,6 +1,6 @@
 import time
 import requests
-import os
+# import os
 import json
 import base64
 import paramiko
@@ -10,7 +10,7 @@ from scp import get
 import pdb
 import click
 
-JWT = os.getenv('MY_JWT')
+JWT = <JWT_TOKEN>
 headers = {'Authorization': 'bearer %s' % JWT}
 
 # Create VM
@@ -106,7 +106,7 @@ def deploy_server(vco_domain, customer_id, cloudspace_id, image_id, pub_ssh_port
     except:
         print('vm was not created successfully, please check your jwt token or api endpoint'  )
         return
-    print("\n    Creating VM complete")
+    print("\n    Creating VM completed.")
 
     print("\n[2] Creating  Port Forwards ...")
     try:
@@ -118,11 +118,11 @@ def deploy_server(vco_domain, customer_id, cloudspace_id, image_id, pub_ssh_port
     
     try:
         create_port_forward(1194, pub_openvpn_port, "udp", id, customer_id, cloudspace_id, vco_domain)
-        print("\n    OpenVPN Port Forwards created.")
+        print("\n    OpenVPN Port Forwards created")
     except:
         print("check to see if selected public ports are free")
         return
-    print("\n    VM creation complete, please wait for a few minutes for the OpenVPN server to completely install before creating a user.\n")
+    print("\n    VM creation completed, please wait for a few minutes for the OpenVPN server to completely install before creating a user.\n")
 
 
 # Create Port Forwards
@@ -186,7 +186,7 @@ def create_user(vco_domain, customer_id, cloudspace_id, external_ip, vm_id, pub_
         client.exec_command(f"sudo sed -i 's/client1/{user_name}/g' {user_name}_client")
         client.exec_command(f"sudo ./{user_name}_client")
         time.sleep(5)
-        print(f"\n    user {user_name} creation complete")
+        print(f"\n    User {user_name} creation completed.")
     
     def download_user_config():
         scp = SCPClient(client.get_transport())
