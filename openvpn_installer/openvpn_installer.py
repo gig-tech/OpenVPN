@@ -1,16 +1,15 @@
 import time
 import requests
-# import os
 import json
 import base64
 import paramiko
 from paramiko import SSHClient
 from scp import SCPClient
 from scp import get
-import pdb
 import click
+import env
 
-JWT = <JWT_TOKEN>
+JWT = env.MY_JWT
 headers = {'Authorization': 'bearer %s' % JWT}
 
 # Create VM
@@ -49,8 +48,8 @@ def deploy_server(vco_domain, customer_id, cloudspace_id, image_id, pub_ssh_port
     b64_cmds_client = base64_encode("cmds_client")
     try:
         if (pub_key):
-            with open(pub_key) as f:
-                ssh_pub_key = f.read()
+            # with open('pub_key.pub', 'rb') as f:
+            ssh_pub_key = pub_key
     except:
         print(f"WARNING: {pub_key} not found, use password to access server")
         # ssh_pub_key="abc"
